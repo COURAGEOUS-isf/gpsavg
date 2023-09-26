@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::Context;
-use clap::Parser;
+use clap::CommandFactory;
 use colored::Colorize;
 use glam::DVec3;
 
@@ -23,14 +23,17 @@ struct Input {
 }
 
 fn main() -> anyhow::Result<()> {
-    let input = Input::parse();
+    let input = Input::command()
+        .help_template(include_str!("help_template"))
+        .get_matches();
 
-    let file = BufReader::new(File::open(&input.input_path).with_context(|| {
-        format!(
-            "Failed to read input file at {}",
-            input.input_path.display()
-        )
-    })?);
+    let input_path = input.get_one::<PathBuf>("input_path").unwrap();
+    let short = input.get_flag("short");
+
+    let file = BufReader::new(
+        File::open(&input_path)
+            .with_context(|| format!("Failed to read input file at {}", input_path.display()))?,
+    );
 
     let positions = file
         .lines()
@@ -59,7 +62,7 @@ fn main() -> anyhow::Result<()> {
         / (n - 1) as f64)
         .powf(0.5);
 
-    if input.short {
+    if short {
         println!("{}, {}, {}", avg.x, avg.y, avg.z);
     } else {
         let formatted = format!("({:.4}º, {:.4}º, {:.1}m)", avg.x, avg.y, avg.z).bold();
