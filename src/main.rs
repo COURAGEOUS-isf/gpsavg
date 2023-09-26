@@ -100,7 +100,7 @@ fn parse_line(line: &str) -> anyhow::Result<Option<DVec3>> {
             })?;
             let ns = params[2];
             let lon = (|| -> anyhow::Result<f64> {
-                let lon = params[3].split_at(2);
+                let lon = params[3].split_at(3);
                 let lon_deg: f64 = lon.0.parse::<f64>()?;
                 let lon_min: f64 = lon.1.parse::<f64>()?;
                 Ok(lon_deg + lon_min / 60.)
@@ -108,7 +108,7 @@ fn parse_line(line: &str) -> anyhow::Result<Option<DVec3>> {
             .with_context(|| {
                 format!(
                     "Failed to parse latitude; \
-            Expecting a number formatted as ddmm.mmmm but got '{}'",
+            Expecting a number formatted as dddmm.mmmm but got '{}'",
                     params[3]
                 )
             })?;
