@@ -9,6 +9,9 @@ use clap::Parser;
 use colored::Colorize;
 use glam::DVec3;
 
+/// The Earth's radius, in meters.
+const EARTH_RADIUS: f64 = 6371000.;
+
 #[derive(clap::Parser)]
 #[command(author, version, about, long_about = None)]
 struct Input {
@@ -65,7 +68,13 @@ fn main() -> anyhow::Result<()> {
 
         println!("Number of entries: {n}");
         let formatted = format!("({:.6}º, {:.6}º, {:.3}m)", std_dev.x, std_dev.y, std_dev.z);
-        println!("Standard deviation: {formatted}");
+        let formatted_m = format!(
+            "Horizontally: ~({:.2}m, {:.2}m)",
+            std_dev.x * EARTH_RADIUS,
+            std_dev.y * EARTH_RADIUS
+        )
+        .italic();
+        println!("Standard deviation: {formatted} {formatted_m}");
     }
 
     Ok(())
