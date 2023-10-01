@@ -51,9 +51,19 @@ fn main() -> anyhow::Result<()> {
         .filter_map(|maybe_pos| -> Option<anyhow::Result<DVec3>> { maybe_pos.transpose() })
         .collect::<anyhow::Result<Vec<_>>>()?;
 
-    let (histogram_x, division_val_x) = histogram(&positions, |x| x.x);
-    let (histogram_y, division_val_y) = histogram(&positions, |x| x.y);
-    let (histogram_z, division_val_z) = histogram(&positions, |x| x.z);
+    let n = positions.len();
+    let avg = positions.iter().copied().sum::<DVec3>() / n as f64;
+    let std_dev = (positions
+        .iter()
+        .copied()
+        .map(|r| (r - avg).powf(2.))
+        .sum::<DVec3>()
+        / (n - 1) as f64)
+        .powf(0.5);
+
+    let (histogram_x, division_val_x) = histogram(&positions, |x| x.x, (avg, std_dev));
+    let (histogram_y, division_val_y) = histogram(&positions, |x| x.y, (avg, std_dev));
+    let (histogram_z, division_val_z) = histogram(&positions, |x| x.z, (avg, std_dev));
 
     let histogram_val_x: Vec<_> = histogram_x.iter().map(|x| x.len()).collect();
     let histogram_val_y: Vec<_> = histogram_y.iter().map(|y| y.len()).collect();
@@ -63,16 +73,6 @@ fn main() -> anyhow::Result<()> {
         .iter()
         .filter(|x| {
             let cutoff: f64 = 3.;
-
-            let n = positions.len();
-            let avg = positions.iter().copied().sum::<DVec3>() / n as f64;
-            let std_dev = (positions
-                .iter()
-                .copied()
-                .map(|r| (r - avg).powf(2.))
-                .sum::<DVec3>()
-                / (n - 1) as f64)
-                .powf(0.5);
 
             x.x > avg.x - cutoff * std_dev.x
                 && x.x < avg.x + cutoff * std_dev.x
@@ -84,62 +84,80 @@ fn main() -> anyhow::Result<()> {
         .copied()
         .collect::<Vec<DVec3>>();
 
-    let m = positions.len();
-    let n = positions_filtered.len();
-    let avg = positions_filtered.iter().copied().sum::<DVec3>() / n as f64;
-    let std_dev = (positions_filtered
+    let n = positions.len();
+    let n_filtered = positions_filtered.len();
+    let avg_filtered = positions_filtered.iter().copied().sum::<DVec3>() / n_filtered as f64;
+    let std_dev_filtered = (positions_filtered
         .iter()
         .copied()
-        .map(|r| (r - avg).powf(2.))
+        .map(|r| (r - avg_filtered).powf(2.))
         .sum::<DVec3>()
-        / (n - 1) as f64)
+        / (n_filtered - 1) as f64)
         .powf(0.5);
     let std_dev_m = {
         let (y, x, z) = geodetic2enu(
-            (avg + std_dev).x,
-            (avg + std_dev).y,
-            (avg + std_dev).z,
-            avg.x,
-            avg.y,
-            avg.z,
+            (avg_filtered + std_dev_filtered).x,
+            (avg_filtered + std_dev_filtered).y,
+            (avg_filtered + std_dev_filtered).z,
+            avg_filtered.x,
+            avg_filtered.y,
+            avg_filtered.z,
             map_3d::Ellipsoid::WGS84,
         );
         DVec3::from((x, y, z))
     };
 
     if short {
-        println!("{}, {}, {}", avg.x, avg.y, avg.z);
+        println!("{}, {}, {}", avg_filtered.x, avg_filtered.y, avg_filtered.z);
     } else {
-        let formatted = format!("({:.4}º, {:.4}º, {:.1}m)", avg.x, avg.y, avg.z).bold();
-        let formatted_raw = format!("({}, {}, {})", avg.x, avg.y, avg.z).italic();
+        let formatted = format!(
+            "({:.4}º, {:.4}º, {:.1}m)",
+            avg_filtered.x, avg_filtered.y, avg_filtered.z
+        )
+        .bold();
+        let formatted_raw = format!(
+            "({}, {}, {})",
+            avg_filtered.x, avg_filtered.y, avg_filtered.z
+        )
+        .italic();
         println!("Average: {formatted} {formatted_raw}\n");
 
-        let formatted = format!("({} discarded)", m - n).italic();
-        println!("Number of entries: {m} {}", formatted);
-        let formatted = format!("({:.6}º, {:.6}º, {:.3}m)", std_dev.x, std_dev.y, std_dev.z);
+        let formatted = format!("({} after filter)", n_filtered).italic();
+        println!("Number of entries: {n} {}", formatted);
+        let formatted = format!(
+            "({:.6}º, {:.6}º, {:.3}m)",
+            std_dev_filtered.x, std_dev_filtered.y, std_dev_filtered.z
+        );
         let formatted_m =
             format!("Horizontally: ~({:.2}m, {:.2}m)", std_dev_m.x, std_dev_m.y).italic();
         println!("Standard deviation: {formatted} {formatted_m}");
 
         let formatted = {
             let mut formatted =
-                String::from_str("  Latitude (º)            Longitude (º)           Altitude(m)\n")
+                String::from_str("  Latitude (º)\t\t\t\t  Longitude (º)\t\t\t\t  Altitude(m)\n")
                     .unwrap();
-            let mut val_x = division_val_x.iter(); // All these iterators have the same length (2 * cutoff * div ) from histogram
-            let mut val_y = division_val_y.iter();
-            let mut val_z = division_val_z.iter();
-            let mut y = histogram_val_y.iter();
-            let mut z = histogram_val_z.iter();
-            for x in histogram_val_x.iter() {
+            let iter = division_val_x
+                .iter()
+                .zip(division_val_y.iter())
+                .zip(division_val_z.iter())
+                .zip(histogram_val_x.iter())
+                .zip(histogram_val_y.iter())
+                .zip(histogram_val_z.iter())
+                .map(
+                    |(
+                        (((((inf_x, sup_x), (inf_y, sup_y)), (inf_z, sup_z)), hist_x), hist_y),
+                        hist_z,
+                    )| {
+                        (
+                            inf_x, sup_x, inf_y, sup_y, inf_z, sup_z, hist_x, hist_y, hist_z,
+                        )
+                    },
+                );
+            for (inf_x, sup_x, inf_y, sup_y, inf_z, sup_z, hist_x, hist_y, hist_z) in iter {
                 formatted.push_str(
                     format!(
-                        "{}\t{:.6}\t{}\t{:.6}\t{}\t{:.6}\n",
-                        x,
-                        val_x.next().unwrap(),
-                        y.next().unwrap(),
-                        val_y.next().unwrap(),
-                        z.next().unwrap(),
-                        val_z.next().unwrap()
+                        "{hist_x}\t({:.6} , {:.6})\t\t{hist_y}\t({:.6} , {:.6})\t\t{hist_z}\t({:.6} , {:.6})\n",
+                        inf_x, sup_x, inf_y, sup_y, inf_z, sup_z
                     )
                     .as_str(),
                 );
@@ -227,18 +245,12 @@ fn parse_line(line: &str) -> anyhow::Result<Option<DVec3>> {
     }
 }
 
-fn histogram(positions: &Vec<DVec3>, r_variable: fn(&DVec3) -> f64) -> (Vec<Vec<DVec3>>, Vec<f64>) {
+fn histogram(
+    positions: &Vec<DVec3>,
+    r_variable: fn(&DVec3) -> f64,
+    (avg, std_dev): (DVec3, DVec3),
+) -> (Vec<Vec<DVec3>>, Vec<(f64, f64)>) {
     let mut position_set: Vec<DVec3> = positions.clone();
-
-    let n = position_set.len();
-    let avg = position_set.iter().copied().sum::<DVec3>() / n as f64;
-    let std_dev = (position_set
-        .iter()
-        .copied()
-        .map(|r| (r - avg).powf(2.))
-        .sum::<DVec3>()
-        / (n - 1) as f64)
-        .powf(0.5);
 
     let cutoff: i32 = 3; // measured in standard deviations
     let div: i32 = 6;
@@ -252,26 +264,26 @@ fn histogram(positions: &Vec<DVec3>, r_variable: fn(&DVec3) -> f64) -> (Vec<Vec<
             .expect("Histogram: Incomparable values")
     });
 
-    let division_values = range.clone().collect::<Vec<f64>>();
+    let division_values = range.clone().zip(range.clone().skip(1)).collect::<Vec<_>>();
     let mut histogram: Vec<Vec<DVec3>> = Vec::new();
-    let mut division: Vec<DVec3> = Vec::new();
+    let mut division_aux: Vec<DVec3> = Vec::new();
 
     for pos in position_set {
-        while range.peek().is_some() {
-            if r_variable(&pos) < *range.peek().unwrap() {
-                division.push(pos);
+        while let Some(val) = range.peek() {
+            if r_variable(&pos) < *val {
+                division_aux.push(pos);
                 break;
             } else {
-                histogram.push(division.clone());
-                division.clear();
+                histogram.push(division_aux.clone());
+                division_aux.clear();
                 range.next();
             }
         }
     }
 
     while range.next().is_some() {
-        histogram.push(division.clone());
-        division.clear();
+        histogram.push(division_aux.clone());
+        division_aux.clear();
     }
     histogram.remove(0); //  Removes lower bound of data (atypical data)
     (histogram, division_values)
