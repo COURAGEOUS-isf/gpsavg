@@ -61,34 +61,13 @@ fn main() -> anyhow::Result<()> {
         / (n - 1) as f64)
         .powf(0.5);
 
-    let (histogram_x, division_val_x) = histogram(&positions, |x| x.x, (avg, std_dev));
-    let (histogram_y, division_val_y) = histogram(&positions, |x| x.y, (avg, std_dev));
-    let (histogram_z, division_val_z) = histogram(&positions, |x| x.z, (avg, std_dev));
+    let (histogram_x, division_val_x) = histogram(positions.clone(), |x| x.x, (avg, std_dev));
+    let (histogram_y, division_val_y) = histogram(positions.clone(), |x| x.y, (avg, std_dev));
+    let (histogram_z, division_val_z) = histogram(positions.clone(), |x| x.z, (avg, std_dev));
 
-    let histogram_val_x = {
-        let mut histogram_val = vec![0; division_val_x.len()];
-
-        for idx in histogram_x.iter().map(|(i, _)| *i as usize) {
-            histogram_val[idx] = histogram_val[idx] + 1;
-        }
-        histogram_val
-    };
-    let histogram_val_y = {
-        let mut histogram_val = vec![0; division_val_y.len()];
-
-        for idx in histogram_y.iter().map(|(i, _)| *i as usize) {
-            histogram_val[idx] = histogram_val[idx] + 1;
-        }
-        histogram_val
-    };
-    let histogram_val_z = {
-        let mut histogram_val = vec![0; division_val_z.len()];
-
-        for idx in histogram_z.iter().map(|(i, _)| *i as usize) {
-            histogram_val[idx] = histogram_val[idx] + 1;
-        }
-        histogram_val
-    };
+    let histogram_val_x = histogram_val(histogram_x);
+    let histogram_val_y = histogram_val(histogram_y);
+    let histogram_val_z = histogram_val(histogram_z);
 
     let positions_filtered = positions
         .iter()
@@ -159,11 +138,11 @@ fn main() -> anyhow::Result<()> {
                     .unwrap();
             let iter = division_val_x
                 .iter()
-                .zip(division_val_y.iter())
-                .zip(division_val_z.iter())
-                .zip(histogram_val_x.iter())
-                .zip(histogram_val_y.iter())
-                .zip(histogram_val_z.iter())
+                .zip(division_val_y)
+                .zip(division_val_z)
+                .zip(histogram_val_x)
+                .zip(histogram_val_y)
+                .zip(histogram_val_z)
                 .map(
                     |(
                         (((((inf_x, sup_x), (inf_y, sup_y)), (inf_z, sup_z)), hist_x), hist_y),
@@ -267,12 +246,10 @@ fn parse_line(line: &str) -> anyhow::Result<Option<DVec3>> {
 }
 
 fn histogram(
-    positions: &Vec<DVec3>,
+    mut positions: Vec<DVec3>,
     r_variable: fn(&DVec3) -> f64,
     (avg, std_dev): (DVec3, DVec3),
 ) -> (Vec<(i32, DVec3)>, Vec<(f64, f64)>) {
-    let mut position_set: Vec<DVec3> = positions.clone();
-
     let cutoff: i32 = 3; // measured in standard deviations
     let div: i32 = 6;
     let mut range = (-(cutoff * div)..(cutoff * div))
@@ -280,11 +257,7 @@ fn histogram(
         .map(|i| (i as f64) / (div as f64) * r_variable(&std_dev) + r_variable(&avg))
         .enumerate()
         .peekable();
-    position_set.sort_by(|a, b| {
-        r_variable(a)
-            .partial_cmp(&r_variable(b))
-            .expect("Histogram: Incomparable values")
-    });
+    positions.sort_by(|a, b| r_variable(a).total_cmp(&r_variable(b)));
 
     let division_values = range
         .clone()
@@ -294,7 +267,7 @@ fn histogram(
 
     let mut histogram: Vec<(i32, DVec3)> = Vec::new();
 
-    for pos in position_set {
+    for pos in positions {
         while let Some((idx, val)) = range.peek() {
             if r_variable(&pos) < *val {
                 histogram.push((*idx as i32, pos));
@@ -305,9 +278,15 @@ fn histogram(
         }
     }
 
-    let histogram = histogram
-        .into_iter()
-        .filter(|(i, _)| *i != 0) //  Removes lower bound of data (atypical data)
-        .collect::<Vec<(i32, DVec3)>>();
+    histogram.retain(|(i, _)| *i != 0); //  Removes lower bound of data (atypical data)
     (histogram, division_values)
+}
+
+fn histogram_val(histogram: Vec<(i32, DVec3)>) -> Vec<i32> {
+    let mut histogram_val = vec![0; histogram.len()];
+
+    for idx in histogram.iter().map(|(i, _)| *i as usize) {
+        histogram_val[idx] += 1;
+    }
+    histogram_val
 }
