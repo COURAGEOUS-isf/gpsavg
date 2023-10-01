@@ -65,9 +65,30 @@ fn main() -> anyhow::Result<()> {
     let (histogram_y, division_val_y) = histogram(&positions, |x| x.y, (avg, std_dev));
     let (histogram_z, division_val_z) = histogram(&positions, |x| x.z, (avg, std_dev));
 
-    let histogram_val_x: Vec<_> = histogram_x.iter().map(|x| x.len()).collect();
-    let histogram_val_y: Vec<_> = histogram_y.iter().map(|y| y.len()).collect();
-    let histogram_val_z: Vec<_> = histogram_z.iter().map(|z| z.len()).collect();
+    let histogram_val_x = {
+        let mut histogram_val = vec![0; division_val_x.len()];
+
+        for idx in histogram_x.iter().map(|(i, _)| *i as usize) {
+            histogram_val[idx] = histogram_val[idx] + 1;
+        }
+        histogram_val
+    };
+    let histogram_val_y = {
+        let mut histogram_val = vec![0; division_val_y.len()];
+
+        for idx in histogram_y.iter().map(|(i, _)| *i as usize) {
+            histogram_val[idx] = histogram_val[idx] + 1;
+        }
+        histogram_val
+    };
+    let histogram_val_z = {
+        let mut histogram_val = vec![0; division_val_z.len()];
+
+        for idx in histogram_z.iter().map(|(i, _)| *i as usize) {
+            histogram_val[idx] = histogram_val[idx] + 1;
+        }
+        histogram_val
+    };
 
     let positions_filtered = positions
         .iter()
@@ -249,7 +270,7 @@ fn histogram(
     positions: &Vec<DVec3>,
     r_variable: fn(&DVec3) -> f64,
     (avg, std_dev): (DVec3, DVec3),
-) -> (Vec<Vec<DVec3>>, Vec<(f64, f64)>) {
+) -> (Vec<(i32, DVec3)>, Vec<(f64, f64)>) {
     let mut position_set: Vec<DVec3> = positions.clone();
 
     let cutoff: i32 = 3; // measured in standard deviations
@@ -257,6 +278,7 @@ fn histogram(
     let mut range = (-(cutoff * div)..(cutoff * div))
         .into_iter()
         .map(|i| (i as f64) / (div as f64) * r_variable(&std_dev) + r_variable(&avg))
+        .enumerate()
         .peekable();
     position_set.sort_by(|a, b| {
         r_variable(a)
@@ -264,27 +286,28 @@ fn histogram(
             .expect("Histogram: Incomparable values")
     });
 
-    let division_values = range.clone().zip(range.clone().skip(1)).collect::<Vec<_>>();
-    let mut histogram: Vec<Vec<DVec3>> = Vec::new();
-    let mut division_aux: Vec<DVec3> = Vec::new();
+    let division_values = range
+        .clone()
+        .map(|(_, x)| x)
+        .zip(range.clone().map(|(_, x)| x).skip(1))
+        .collect::<Vec<_>>();
+
+    let mut histogram: Vec<(i32, DVec3)> = Vec::new();
 
     for pos in position_set {
-        while let Some(val) = range.peek() {
+        while let Some((idx, val)) = range.peek() {
             if r_variable(&pos) < *val {
-                division_aux.push(pos);
+                histogram.push((*idx as i32, pos));
                 break;
             } else {
-                histogram.push(division_aux.clone());
-                division_aux.clear();
                 range.next();
             }
         }
     }
 
-    while range.next().is_some() {
-        histogram.push(division_aux.clone());
-        division_aux.clear();
-    }
-    histogram.remove(0); //  Removes lower bound of data (atypical data)
+    let histogram = histogram
+        .into_iter()
+        .filter(|(i, _)| *i != 0) //  Removes lower bound of data (atypical data)
+        .collect::<Vec<(i32, DVec3)>>();
     (histogram, division_values)
 }
