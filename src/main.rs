@@ -5,7 +5,7 @@ use std::{
     str::FromStr,
 };
 
-use anyhow::Context;
+use anyhow::{anyhow, Context};
 use clap::CommandFactory;
 use colored::Colorize;
 use glam::DVec3;
@@ -184,7 +184,15 @@ fn parse_line(line: &str) -> anyhow::Result<Option<DVec3>> {
                 )
             })?;
 
+            // GPS data may sometimes be empty
+            if params[1].is_empty() {
+                return Ok(None);
+            }
+
             let lat = (|| -> anyhow::Result<f64> {
+                if params[1].len() < 2 {
+                    return Err(anyhow!("Latitude value is not long enough to be parsed"));
+                }
                 let lat = params[1].split_at(2);
                 let lat_deg: f64 = lat.0.parse::<f64>()?;
                 let lat_min: f64 = lat.1.parse::<f64>()?;
