@@ -2,15 +2,14 @@ use std::{
     fs::File,
     io::{BufRead, BufReader},
     path::PathBuf,
+    str::FromStr,
 };
 
 use anyhow::{anyhow, Context};
 use clap::CommandFactory;
 use colored::Colorize;
 use glam::DVec3;
-
-/// The Earth's radius, in meters.
-const EARTH_RADIUS: f64 = 6371000.;
+use map_3d::geodetic2enu;
 
 #[derive(clap::Parser)]
 #[command(author, version, about, long_about = None)]
@@ -62,22 +61,110 @@ fn main() -> anyhow::Result<()> {
         / (n - 1) as f64)
         .powf(0.5);
 
-    if short {
-        println!("{}, {}, {}", avg.x, avg.y, avg.z);
-    } else {
-        let formatted = format!("({:.4}º, {:.4}º, {:.1}m)", avg.x, avg.y, avg.z).bold();
-        let formatted_raw = format!("({}, {}, {})", avg.x, avg.y, avg.z).italic();
-        println!("Average: {formatted} {formatted_raw}\n");
+    let (histogram_x, division_val_x) = histogram(positions.clone(), |x| x.x, (avg, std_dev));
+    let (histogram_y, division_val_y) = histogram(positions.clone(), |x| x.y, (avg, std_dev));
+    let (histogram_z, division_val_z) = histogram(positions.clone(), |x| x.z, (avg, std_dev));
 
-        println!("Number of entries: {n}");
-        let formatted = format!("({:.6}º, {:.6}º, {:.3}m)", std_dev.x, std_dev.y, std_dev.z);
-        let formatted_m = format!(
-            "Horizontally: ~({:.2}m, {:.2}m)",
-            std_dev.x * EARTH_RADIUS,
-            std_dev.y * EARTH_RADIUS
+    let histogram_val_x = histogram_val(histogram_x);
+    let histogram_val_y = histogram_val(histogram_y);
+    let histogram_val_z = histogram_val(histogram_z);
+
+    let positions_filtered = positions
+        .iter()
+        .filter(|x| {
+            let cutoff: f64 = 3.;
+
+            x.x > avg.x - cutoff * std_dev.x
+                && x.x < avg.x + cutoff * std_dev.x
+                && x.y > avg.y - cutoff * std_dev.y
+                && x.y < avg.y + cutoff * std_dev.y
+                && x.z > avg.z - cutoff * std_dev.z
+                && x.z < avg.z + cutoff * std_dev.z
+        })
+        .copied()
+        .collect::<Vec<DVec3>>();
+
+    let n = positions.len();
+    let n_filtered = positions_filtered.len();
+    let avg_filtered = positions_filtered.iter().copied().sum::<DVec3>() / n_filtered as f64;
+    let std_dev_filtered = (positions_filtered
+        .iter()
+        .copied()
+        .map(|r| (r - avg_filtered).powf(2.))
+        .sum::<DVec3>()
+        / (n_filtered - 1) as f64)
+        .powf(0.5);
+    let std_dev_m = {
+        let (y, x, z) = geodetic2enu(
+            (avg_filtered + std_dev_filtered).x,
+            (avg_filtered + std_dev_filtered).y,
+            (avg_filtered + std_dev_filtered).z,
+            avg_filtered.x,
+            avg_filtered.y,
+            avg_filtered.z,
+            map_3d::Ellipsoid::WGS84,
+        );
+        DVec3::from((x, y, z))
+    };
+
+    if short {
+        println!("{}, {}, {}", avg_filtered.x, avg_filtered.y, avg_filtered.z);
+    } else {
+        let formatted = format!(
+            "({:.4}º, {:.4}º, {:.1}m)",
+            avg_filtered.x, avg_filtered.y, avg_filtered.z
+        )
+        .bold();
+        let formatted_raw = format!(
+            "({}, {}, {})",
+            avg_filtered.x, avg_filtered.y, avg_filtered.z
         )
         .italic();
+        println!("Average: {formatted} {formatted_raw}\n");
+
+        let formatted = format!("({} after filter)", n_filtered).italic();
+        println!("Number of entries: {n} {}", formatted);
+        let formatted = format!(
+            "({:.6}º, {:.6}º, {:.3}m)",
+            std_dev_filtered.x, std_dev_filtered.y, std_dev_filtered.z
+        );
+        let formatted_m =
+            format!("Horizontally: ~({:.2}m, {:.2}m)", std_dev_m.x, std_dev_m.y).italic();
         println!("Standard deviation: {formatted} {formatted_m}");
+
+        let formatted = {
+            let mut formatted =
+                String::from_str("  Latitude (º)\t\t\t\t  Longitude (º)\t\t\t\t  Altitude(m)\n")
+                    .unwrap();
+            let iter = division_val_x
+                .iter()
+                .zip(division_val_y)
+                .zip(division_val_z)
+                .zip(histogram_val_x)
+                .zip(histogram_val_y)
+                .zip(histogram_val_z)
+                .map(
+                    |(
+                        (((((inf_x, sup_x), (inf_y, sup_y)), (inf_z, sup_z)), hist_x), hist_y),
+                        hist_z,
+                    )| {
+                        (
+                            inf_x, sup_x, inf_y, sup_y, inf_z, sup_z, hist_x, hist_y, hist_z,
+                        )
+                    },
+                );
+            for (inf_x, sup_x, inf_y, sup_y, inf_z, sup_z, hist_x, hist_y, hist_z) in iter {
+                formatted.push_str(
+                    format!(
+                        "{hist_x}\t({:.6} , {:.6})\t\t{hist_y}\t({:.6} , {:.6})\t\t{hist_z}\t({:.6} , {:.6})\n",
+                        inf_x, sup_x, inf_y, sup_y, inf_z, sup_z
+                    )
+                    .as_str(),
+                );
+            }
+            formatted
+        };
+        println!("Histogram values:\n {} ", formatted);
     }
 
     Ok(())
@@ -127,7 +214,7 @@ fn parse_line(line: &str) -> anyhow::Result<Option<DVec3>> {
             })()
             .with_context(|| {
                 format!(
-                    "Failed to parse latitude; \
+                    "Failed to parse longitude; \
             Expecting a number formatted as dddmm.mmmm but got '{}'",
                     params[3]
                 )
@@ -164,4 +251,50 @@ fn parse_line(line: &str) -> anyhow::Result<Option<DVec3>> {
         }
         _ => Ok(None),
     }
+}
+
+fn histogram(
+    mut positions: Vec<DVec3>,
+    r_variable: fn(&DVec3) -> f64,
+    (avg, std_dev): (DVec3, DVec3),
+) -> (Vec<(i32, DVec3)>, Vec<(f64, f64)>) {
+    let cutoff: i32 = 3; // measured in standard deviations
+    let div: i32 = 6;
+    let mut range = (-(cutoff * div)..(cutoff * div))
+        .into_iter()
+        .map(|i| (i as f64) / (div as f64) * r_variable(&std_dev) + r_variable(&avg))
+        .enumerate()
+        .peekable();
+    positions.sort_by(|a, b| r_variable(a).total_cmp(&r_variable(b)));
+
+    let division_values = range
+        .clone()
+        .map(|(_, x)| x)
+        .zip(range.clone().map(|(_, x)| x).skip(1))
+        .collect::<Vec<_>>();
+
+    let mut histogram: Vec<(i32, DVec3)> = Vec::new();
+
+    for pos in positions {
+        while let Some((idx, val)) = range.peek() {
+            if r_variable(&pos) < *val {
+                histogram.push((*idx as i32, pos));
+                break;
+            } else {
+                range.next();
+            }
+        }
+    }
+
+    histogram.retain(|(i, _)| *i != 0); //  Removes lower bound of data (atypical data)
+    (histogram, division_values)
+}
+
+fn histogram_val(histogram: Vec<(i32, DVec3)>) -> Vec<i32> {
+    let mut histogram_val = vec![0; histogram.len()];
+
+    for idx in histogram.iter().map(|(i, _)| *i as usize) {
+        histogram_val[idx] += 1;
+    }
+    histogram_val
 }
