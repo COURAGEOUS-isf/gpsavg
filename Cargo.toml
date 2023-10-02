@@ -1,8 +1,11 @@
 [package]
 name = "gpsavg"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-authors = ["Alejandro Perea <aleok.inf@gmail.com>"]
+authors = [
+    "Alejandro Perea <aleok.inf@gmail.com>",
+    "Marco Castell <castellmartinmarco1@gmail.com>",
+]
 description = "Commandline program to obtain the average position of GPS devices using NMEA 0183, among other stats"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
