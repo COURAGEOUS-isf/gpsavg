@@ -21,7 +21,7 @@ struct Input {
     short: bool,
 
     #[arg(short)]
-    /// Return the average, standard deviation and histogram for each of the coordinates. Useful for detecting anomalies.
+    /// Return additionally the histogram for each of the coordinates. Useful for detecting anomalies.
     long: bool,
 }
 
