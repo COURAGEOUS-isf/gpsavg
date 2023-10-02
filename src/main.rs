@@ -20,9 +20,9 @@ struct Input {
     /// Return _only_ the average, with no other text. Useful for passing onto another programs or storing into a file.
     short: bool,
 
-    #[arg(short)]
+    #[arg(short = 'l')]
     /// Return additionally the histogram for each of the coordinates. Useful for detecting anomalies.
-    long: bool,
+    show_histogram: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -32,7 +32,7 @@ fn main() -> anyhow::Result<()> {
 
     let input_path = input.get_one::<PathBuf>("input_path").unwrap();
     let short = input.get_flag("short");
-    let long = input.get_flag("long");
+    let show_histogram = input.get_flag("show_histogram");
 
     let file = BufReader::new(
         File::open(&input_path)
@@ -136,7 +136,7 @@ fn main() -> anyhow::Result<()> {
         let formatted_m =
             format!("Horizontally: ~({:.2}m, {:.2}m)", std_dev_m.x, std_dev_m.y).italic();
         println!("Standard deviation: {formatted} {formatted_m}");
-        if long {
+        if show_histogram {
             let formatted = {
                 let mut formatted = String::from_str(
                     "  Latitude (º)\t\t\t\t  Longitude (º)\t\t\t\t  Altitude(m)\n",
