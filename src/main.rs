@@ -115,6 +115,12 @@ fn main() -> anyhow::Result<()> {
     if short {
         println!("{}, {}, {}", avg_filtered.x, avg_filtered.y, avg_filtered.z);
     } else {
+        println!(
+            "{}",
+            "Values are formatted as (latitude, longitude, altitude) unless specified otherwise.\n"
+                .italic()
+        );
+
         let formatted = format!(
             "({:.4}º, {:.4}º, {:.1}m)",
             avg_filtered.x, avg_filtered.y, avg_filtered.z
