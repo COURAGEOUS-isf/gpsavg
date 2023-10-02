@@ -19,6 +19,10 @@ struct Input {
     #[arg(short)]
     /// Return _only_ the average, with no other text. Useful for passing onto another programs or storing into a file.
     short: bool,
+
+    #[arg(short)]
+    /// Return the average, standard deviation and histogram for each of the coordinates. Useful for detecting anomalies.
+    long: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -28,6 +32,7 @@ fn main() -> anyhow::Result<()> {
 
     let input_path = input.get_one::<PathBuf>("input_path").unwrap();
     let short = input.get_flag("short");
+    let long = input.get_flag("long");
 
     let file = BufReader::new(
         File::open(&input_path)
@@ -131,40 +136,42 @@ fn main() -> anyhow::Result<()> {
         let formatted_m =
             format!("Horizontally: ~({:.2}m, {:.2}m)", std_dev_m.x, std_dev_m.y).italic();
         println!("Standard deviation: {formatted} {formatted_m}");
-
-        let formatted = {
-            let mut formatted =
-                String::from_str("  Latitude (º)\t\t\t\t  Longitude (º)\t\t\t\t  Altitude(m)\n")
-                    .unwrap();
-            let iter = division_val_x
-                .iter()
-                .zip(division_val_y)
-                .zip(division_val_z)
-                .zip(histogram_val_x)
-                .zip(histogram_val_y)
-                .zip(histogram_val_z)
-                .map(
-                    |(
-                        (((((inf_x, sup_x), (inf_y, sup_y)), (inf_z, sup_z)), hist_x), hist_y),
-                        hist_z,
-                    )| {
-                        (
-                            inf_x, sup_x, inf_y, sup_y, inf_z, sup_z, hist_x, hist_y, hist_z,
+        if long {
+            let formatted = {
+                let mut formatted = String::from_str(
+                    "  Latitude (º)\t\t\t\t  Longitude (º)\t\t\t\t  Altitude(m)\n",
+                )
+                .unwrap();
+                let iter = division_val_x
+                    .iter()
+                    .zip(division_val_y)
+                    .zip(division_val_z)
+                    .zip(histogram_val_x)
+                    .zip(histogram_val_y)
+                    .zip(histogram_val_z)
+                    .map(
+                        |(
+                            (((((inf_x, sup_x), (inf_y, sup_y)), (inf_z, sup_z)), hist_x), hist_y),
+                            hist_z,
+                        )| {
+                            (
+                                inf_x, sup_x, inf_y, sup_y, inf_z, sup_z, hist_x, hist_y, hist_z,
+                            )
+                        },
+                    );
+                for (inf_x, sup_x, inf_y, sup_y, inf_z, sup_z, hist_x, hist_y, hist_z) in iter {
+                    formatted.push_str(
+                        format!(
+                            "{hist_x}\t({:.6} , {:.6})\t\t{hist_y}\t({:.6} , {:.6})\t\t{hist_z}\t({:.6} , {:.6})\n",
+                            inf_x, sup_x, inf_y, sup_y, inf_z, sup_z
                         )
-                    },
-                );
-            for (inf_x, sup_x, inf_y, sup_y, inf_z, sup_z, hist_x, hist_y, hist_z) in iter {
-                formatted.push_str(
-                    format!(
-                        "{hist_x}\t({:.6} , {:.6})\t\t{hist_y}\t({:.6} , {:.6})\t\t{hist_z}\t({:.6} , {:.6})\n",
-                        inf_x, sup_x, inf_y, sup_y, inf_z, sup_z
-                    )
-                    .as_str(),
-                );
-            }
-            formatted
-        };
-        println!("Histogram values:\n {} ", formatted);
+                        .as_str(),
+                    );
+                }
+                formatted
+            };
+            println!("Histogram values:\n {} ", formatted);
+        }
     }
 
     Ok(())
