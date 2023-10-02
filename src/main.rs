@@ -101,11 +101,11 @@ fn main() -> anyhow::Result<()> {
         .powf(0.5);
     let std_dev_m = {
         let (y, x, z) = geodetic2enu(
-            (avg_filtered + std_dev_filtered).x,
-            (avg_filtered + std_dev_filtered).y,
-            (avg_filtered + std_dev_filtered).z,
-            avg_filtered.x,
-            avg_filtered.y,
+            (avg_filtered.x + std_dev_filtered.x).to_radians(),
+            (avg_filtered.y + std_dev_filtered.y).to_radians(),
+            avg_filtered.z + std_dev_filtered.z,
+            avg_filtered.x.to_radians(),
+            avg_filtered.y.to_radians(),
             avg_filtered.z,
             map_3d::Ellipsoid::WGS84,
         );
