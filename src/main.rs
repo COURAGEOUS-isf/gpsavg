@@ -10,6 +10,13 @@ use clap::CommandFactory;
 use colored::Colorize;
 use glam::DVec3;
 use map_3d::geodetic2enu;
+use nmea::{
+    parse_nmea_sentence,
+    sentences::{parse_gga, GgaData},
+    NmeaSentence,
+};
+
+mod tests;
 
 #[derive(clap::Parser)]
 #[command(author, version, about, long_about = None)]
@@ -39,22 +46,7 @@ fn main() -> anyhow::Result<()> {
             .with_context(|| format!("Failed to read input file at {}", input_path.display()))?,
     );
 
-    let positions = file
-        .lines()
-        .enumerate()
-        .map(|(line_num, line)| -> anyhow::Result<Option<DVec3>> {
-            let line = line.with_context(|| {
-                format!("Failed to read line {} of the input file", line_num + 1)
-            })?;
-
-            let pos = parse_line(&line).with_context(|| {
-                format!("Failed to parse line {} of the input file", line_num + 1)
-            })?;
-
-            Ok(pos)
-        })
-        .filter_map(|maybe_pos| -> Option<anyhow::Result<DVec3>> { maybe_pos.transpose() })
-        .collect::<anyhow::Result<Vec<_>>>()?;
+    let positions = parse_file(file)?;
 
     let n = positions.len();
     let avg = positions.iter().copied().sum::<DVec3>() / n as f64;
@@ -183,87 +175,49 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn parse_line(line: &str) -> anyhow::Result<Option<DVec3>> {
-    // https://www.sparkfun.com/datasheets/GPS/NMEA%20Reference%20Manual-Rev2.1-Dec07.pdf
-
-    let mut params = line.split(',');
-    match params.next() {
-        Some("$GPGGA") => {
-            let params = params.collect::<Vec<_>>();
-            let params: [&str; 14] = params.try_into().map_err(|params: Vec<_>| {
-                anyhow::anyhow!(
-                    "Invalid GPGGA message length; Expecting 14 but got {} fields",
-                    params.len()
-                )
+pub fn parse_file(file: BufReader<File>) -> anyhow::Result<Vec<DVec3>> {
+    file.lines()
+        .enumerate()
+        .map(|(line_num, line)| -> anyhow::Result<Option<DVec3>> {
+            let line = line.with_context(|| {
+                format!("Failed to read line {} of the input file", line_num + 1)
             })?;
 
-            // GPS data may sometimes be empty
-            if params[1].is_empty() {
+            if line.starts_with("$PAAG") {
                 return Ok(None);
             }
 
-            let lat = (|| -> anyhow::Result<f64> {
-                if params[1].len() < 2 {
-                    return Err(anyhow!("Latitude value is not long enough to be parsed"));
-                }
-                let lat = params[1].split_at(2);
-                let lat_deg: f64 = lat.0.parse::<f64>()?;
-                let lat_min: f64 = lat.1.parse::<f64>()?;
-                Ok(lat_deg + lat_min / 60.)
-            })()
-            .with_context(|| {
-                format!(
-                    "Failed to parse latitude; \
-                Expecting a number formatted as ddmm.mmmm but got '{}'",
-                    params[1]
-                )
-            })?;
-            let ns = params[2];
-            let lon = (|| -> anyhow::Result<f64> {
-                let lon = params[3].split_at(3);
-                let lon_deg: f64 = lon.0.parse::<f64>()?;
-                let lon_min: f64 = lon.1.parse::<f64>()?;
-                Ok(lon_deg + lon_min / 60.)
-            })()
-            .with_context(|| {
-                format!(
-                    "Failed to parse longitude; \
-            Expecting a number formatted as dddmm.mmmm but got '{}'",
-                    params[3]
-                )
-            })?;
-            let ew = params[4];
-            let ele: f64 = params[8].parse()?;
+            let pos = parse_line(&line)
+                .map_err(|err| anyhow!(err.to_string()))
+                .with_context(|| {
+                    format!("Failed to parse line {} of the input file", line_num + 1)
+                })?;
 
-            let lat = match ns {
-                "N" => lat,
-                "S" => -lat,
-                ns => {
-                    return Err(anyhow::anyhow!(
-                        "Invalid N/S indicator; Expecting 'N' or 'S', found '{}'",
-                        ns
-                    ));
-                }
-            };
-            let lon = match ew {
-                "E" => lon,
-                "W" => -lon,
-                ew => {
-                    return Err(anyhow::anyhow!(
-                        "Invalid E/W indicator; Expecting 'E' or 'W', found '{}'",
-                        ew
-                    ));
-                }
-            };
+            Ok(pos)
+        })
+        .filter_map(|maybe_pos| -> Option<anyhow::Result<DVec3>> { maybe_pos.transpose() })
+        .collect::<anyhow::Result<Vec<_>>>()
+}
 
-            Ok(Some(DVec3 {
-                x: lat,
-                y: lon,
-                z: ele,
-            }))
-        }
-        _ => Ok(None),
-    }
+fn parse_line<'a>(line: &'a str) -> Result<Option<DVec3>, nmea::Error<'a>> {
+    // https://www.sparkfun.com/datasheets/GPS/NMEA%20Reference%20Manual-Rev2.1-Dec07.pdf
+
+    let nmea_line: NmeaSentence<'a> = parse_nmea_sentence(line)?;
+    let gga_data: GgaData = match parse_gga(nmea_line) {
+        Ok(gga_data) => gga_data,
+        Err(nmea::Error::WrongSentenceHeader { .. }) => return Ok(None),
+        Err(err) => Err(err)?,
+    };
+
+    let (Some(lat), Some(lon), Some(ele)) =
+        (gga_data.latitude, gga_data.longitude, gga_data.altitude) else {
+            return Ok(None);
+        };
+    Ok(Some(DVec3 {
+        x: lat,
+        y: lon,
+        z: ele as f64,
+    }))
 }
 
 fn histogram(
