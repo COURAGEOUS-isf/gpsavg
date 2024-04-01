@@ -5,7 +5,7 @@ use anyhow::Context;
 use crate::parse_file;
 
 #[test]
-fn read_file_1() {
+fn read_correct_file() {
     let input_path = "tests/assets/1";
     let file = BufReader::new(
         File::open(&input_path)
@@ -17,8 +17,8 @@ fn read_file_1() {
 }
 
 #[test]
-fn read_file_1_blank() {
-    let input_path = "tests/assets/1_blank";
+fn read_blank_file() {
+    let input_path = "tests/assets/2";
     let file = BufReader::new(
         File::open(&input_path)
             .with_context(|| format!("Failed to read input file at {}", input_path))
@@ -30,7 +30,7 @@ fn read_file_1_blank() {
 
 #[test]
 #[should_panic]
-fn read_file_1_broken() {
+fn read_broken_file() {
     let input_path = "tests/assets/1_broken";
     let file = BufReader::new(
         File::open(&input_path)
