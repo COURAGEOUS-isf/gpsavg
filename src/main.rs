@@ -210,9 +210,10 @@ fn parse_line<'a>(line: &'a str) -> Result<Option<DVec3>, nmea::Error<'a>> {
     };
 
     let (Some(lat), Some(lon), Some(ele)) =
-        (gga_data.latitude, gga_data.longitude, gga_data.altitude) else {
-            return Ok(None);
-        };
+        (gga_data.latitude, gga_data.longitude, gga_data.altitude)
+    else {
+        return Ok(None);
+    };
     Ok(Some(DVec3 {
         x: lat,
         y: lon,
