@@ -16,6 +16,7 @@ use nmea::{
     NmeaSentence,
 };
 
+#[cfg(test)]
 mod tests;
 
 #[derive(clap::Parser)]
@@ -42,7 +43,7 @@ fn main() -> anyhow::Result<()> {
     let show_histogram = input.get_flag("show_histogram");
 
     let file = BufReader::new(
-        File::open(&input_path)
+        File::open(input_path)
             .with_context(|| format!("Failed to read input file at {}", input_path.display()))?,
     );
 
@@ -229,7 +230,6 @@ fn histogram(
     let cutoff: i32 = 3; // measured in standard deviations
     let div: i32 = 6;
     let mut range = (-(cutoff * div)..(cutoff * div))
-        .into_iter()
         .map(|i| (i as f64) / (div as f64) * r_variable(&std_dev) + r_variable(&avg))
         .enumerate()
         .peekable();

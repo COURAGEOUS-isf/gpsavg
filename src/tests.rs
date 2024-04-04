@@ -13,7 +13,7 @@ fn read_correct_file() {
             .unwrap(),
     );
 
-    let positions = parse_file(file).unwrap();
+    let _positions = parse_file(file).unwrap();
 }
 
 #[test]
@@ -25,7 +25,7 @@ fn read_blank_file() {
             .unwrap(),
     );
 
-    let positions = parse_file(file).unwrap();
+    let _positions = parse_file(file).unwrap();
 }
 
 #[test]
@@ -38,5 +38,5 @@ fn read_broken_file() {
             .unwrap(),
     );
 
-    let positions = parse_file(file).unwrap();
+    let _positions = parse_file(file).unwrap();
 }
