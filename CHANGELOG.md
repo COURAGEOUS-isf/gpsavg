@@ -1,4 +1,5 @@
-## [Unreleased]
+## 0.2.2
+- Improve parsing
 - Add this changelog file
 
 ## 0.2.1
