@@ -6,6 +6,7 @@ use std::{
 };
 
 use anyhow::{anyhow, Context};
+use chrono::naive::NaiveTime;
 use clap::CommandFactory;
 use colored::Colorize;
 use glam::DVec3;
@@ -31,6 +32,14 @@ struct Input {
     #[arg(short = 'l')]
     /// Return additionally the histogram for each of the coordinates. Useful for detecting anomalies.
     show_histogram: bool,
+
+    #[arg(long)]
+    /// Ignore the n first seconds of the file.
+    trim_start: Option<u32>,
+
+    #[arg(long)]
+    /// Ignore the n last seconds of the file.
+    trim_end: Option<u32>,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -42,12 +51,15 @@ fn main() -> anyhow::Result<()> {
     let short = input.get_flag("short");
     let show_histogram = input.get_flag("show_histogram");
 
+    let trim_start = input.try_get_one("trim_start").ok().flatten().unwrap_or(&0);
+    let trim_end = input.try_get_one("trim_end").ok().flatten().unwrap_or(&0);
+
     let file = BufReader::new(
         File::open(input_path)
             .with_context(|| format!("Failed to read input file at {}", input_path.display()))?,
     );
 
-    let positions = parse_file(file)?;
+    let positions = parse_file(file, trim_start, trim_end)?;
 
     let n = positions.len();
     let avg = positions.iter().copied().sum::<DVec3>() / n as f64;
@@ -176,31 +188,61 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn parse_file(file: BufReader<File>) -> anyhow::Result<Vec<DVec3>> {
-    file.lines()
+pub fn parse_file(
+    file: BufReader<File>,
+    trim_start: i32,
+    trim_end: i32,
+) -> anyhow::Result<Vec<DVec3>> {
+    let mut pos = file
+        .lines()
         .enumerate()
-        .map(|(line_num, line)| -> anyhow::Result<Option<DVec3>> {
-            let line = line.with_context(|| {
-                format!("Failed to read line {} of the input file", line_num + 1)
-            })?;
-
-            if line.starts_with("$PAAG") {
-                return Ok(None);
-            }
-
-            let pos = parse_line(&line)
-                .map_err(|err| anyhow!(err.to_string()))
-                .with_context(|| {
-                    format!("Failed to parse line {} of the input file", line_num + 1)
+        .map(
+            |(line_num, line)| -> anyhow::Result<Option<(NaiveTime, DVec3)>> {
+                let line = line.with_context(|| {
+                    format!("Failed to read line {} of the input file", line_num + 1)
                 })?;
 
-            Ok(pos)
+                if line.starts_with("$PAAG") {
+                    return Ok(None);
+                }
+
+                let pos = parse_line(&line)
+                    .map_err(|err| anyhow!(err.to_string()))
+                    .with_context(|| {
+                        format!("Failed to parse line {} of the input file", line_num + 1)
+                    })?;
+
+                Ok(pos)
+            },
+        )
+        .filter_map(|maybe_pos| -> Option<anyhow::Result<(NaiveTime, DVec3)>> {
+            maybe_pos.transpose()
         })
-        .filter_map(|maybe_pos| -> Option<anyhow::Result<DVec3>> { maybe_pos.transpose() })
-        .collect::<anyhow::Result<Vec<_>>>()
+        .collect::<anyhow::Result<Vec<_>>>()?;
+
+    pos.sort_by(|(time_a, _pos_a), (time_b, _pos_b)| time_a.cmp(time_b));
+
+    let time_start = pos.iter().map(|(time, _pos)| time).nth(0);
+    let time_end = pos.iter().map(|(time, _pos)| time).last();
+
+    let (time_start, time_end) = match (time_start, time_end) {
+        (Some(a), Some(b)) => (a, b),
+        _ => return Err(anyhow::anyhow!("Could not determine start and times")),
+    };
+
+    Ok(pos
+        .iter()
+        .filter_map(|(time, pos)| {
+            if (time_start < time) && (time < time_end) {
+                Some(*pos)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>())
 }
 
-fn parse_line<'a>(line: &'a str) -> Result<Option<DVec3>, nmea::Error<'a>> {
+fn parse_line<'a>(line: &'a str) -> Result<Option<(NaiveTime, DVec3)>, nmea::Error<'a>> {
     // https://www.sparkfun.com/datasheets/GPS/NMEA%20Reference%20Manual-Rev2.1-Dec07.pdf
 
     let nmea_line: NmeaSentence<'a> = parse_nmea_sentence(line)?;
@@ -215,11 +257,20 @@ fn parse_line<'a>(line: &'a str) -> Result<Option<DVec3>, nmea::Error<'a>> {
     else {
         return Ok(None);
     };
-    Ok(Some(DVec3 {
-        x: lat,
-        y: lon,
-        z: ele as f64,
-    }))
+    let Some(fix_time) =
+        gga_data.fix_time
+    else {
+        return Ok(None);
+    };
+
+    Ok(Some((
+        fix_time,
+        DVec3 {
+            x: lat,
+            y: lon,
+            z: ele as f64,
+        },
+    )))
 }
 
 fn histogram(

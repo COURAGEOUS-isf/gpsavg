@@ -17,3 +17,4 @@ colored = "2.0.4"
 glam = "0.24.2"
 map_3d = { version = "0.1.5" }
 nmea = "0.6.0"
+chrono = "0.4.26"
