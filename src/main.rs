@@ -59,7 +59,7 @@ fn main() -> anyhow::Result<()> {
             .with_context(|| format!("Failed to read input file at {}", input_path.display()))?,
     );
 
-    let positions = parse_file(file, trim_start, trim_end)?;
+    let positions = parse_file(file, *trim_start, *trim_end)?;
 
     let n = positions.len();
     let avg = positions.iter().copied().sum::<DVec3>() / n as f64;
@@ -222,18 +222,16 @@ pub fn parse_file(
 
     pos.sort_by(|(time_a, _pos_a), (time_b, _pos_b)| time_a.cmp(time_b));
 
-    let time_start = pos.iter().map(|(time, _pos)| time).nth(0);
-    let time_end = pos.iter().map(|(time, _pos)| time).last();
-
-    let (time_start, time_end) = match (time_start, time_end) {
-        (Some(a), Some(b)) => (a, b),
-        _ => return Err(anyhow::anyhow!("Could not determine start and times")),
+    let last_element = if pos.len() > 1 {
+        (pos.len() - 1) as i32
+    } else {
+        0
     };
-
     Ok(pos
         .iter()
-        .filter_map(|(time, pos)| {
-            if (time_start < time) && (time < time_end) {
+        .enumerate()
+        .filter_map(|(index, (_time, pos))| {
+            if (trim_start <= index as i32) && (index as i32 <= last_element - trim_end) {
                 Some(*pos)
             } else {
                 None

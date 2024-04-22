@@ -13,7 +13,7 @@ fn read_correct_file() {
             .unwrap(),
     );
 
-    let _positions = parse_file(file).unwrap();
+    let _positions = parse_file(file, 0, 0).unwrap();
 }
 
 #[test]
@@ -25,7 +25,7 @@ fn read_blank_file() {
             .unwrap(),
     );
 
-    let _positions = parse_file(file).unwrap();
+    let _positions = parse_file(file, 0, 0).unwrap();
 }
 
 #[test]
@@ -38,5 +38,17 @@ fn read_broken_file() {
             .unwrap(),
     );
 
-    let _positions = parse_file(file).unwrap();
+    let _positions = parse_file(file, 0, 0).unwrap();
+}
+
+#[test]
+fn trim_correct_file() {
+    let input_path = "tests/assets/1";
+    let file = BufReader::new(
+        File::open(&input_path)
+            .with_context(|| format!("Failed to read input file at {}", input_path))
+            .unwrap(),
+    );
+
+    let _positions = parse_file(file, 5, 5).unwrap();
 }
